@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      # O extrator Gemini é testado com um cliente falso: o CI não usa chave nem gasta cota.
+      - run: pytest -v
+      # Fluxo completo com a linha de base, como no README
+      - run: |
+          python -m notas gerar --quantidade 30
+          python -m notas extrair regras
+          python -m notas avaliar

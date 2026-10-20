@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+
+# gerados: notas, banco e relatório (recriados com os comandos do README)
+dados/
