@@ -83,7 +83,10 @@ python -m notas extrair gemini   # opcional: --modelo outro-modelo  --paralelo 2
 python -m notas avaliar
 ```
 
-Rodar `extrair gemini` de novo não gasta cota: só o que faltou é enviado. Trocar o prompt
+Rodar `extrair gemini` de novo não gasta cota: só o que faltou é enviado. O plano gratuito
+tem limite de requisições por minuto e por dia. No limite por minuto, o extrator espera o
+tempo que a API pede e continua; quando a cota do dia acaba, o lote para na hora, avisa, e
+basta rodar de novo no dia seguinte para completar. Trocar o prompt
 exige mudar `VERSAO` em `gemini.py`, e trocar o modelo cria uma série de resultados separada,
 o que permite comparar modelos lado a lado no mesmo relatório.
 
@@ -93,10 +96,10 @@ o que permite comparar modelos lado a lado no mesmo relatório.
 pytest -v
 ```
 
-28 testes: dígitos verificadores (inclusive o CNPJ alfanumérico que passa a valer em 2026),
+31 testes: dígitos verificadores (inclusive o CNPJ alfanumérico que passa a valer em 2026),
 gerador (toda nota do gabarito passa na própria validação), regras, validação, cache e
 retomada do lote, métricas e o extrator Gemini com um cliente falso, que confere o pedido
-enviado e o tratamento de erros sem gastar cota. O GitHub Actions roda os testes e o fluxo
+enviado e o tratamento de erros (inclusive cota do dia esgotada) sem gastar cota. O GitHub Actions roda os testes e o fluxo
 completo com a linha de base a cada push.
 
 ## Estrutura

@@ -13,3 +13,7 @@ class Resultado:
     tokens_entrada: int = 0
     tokens_saida: int = 0
     observacoes: list[str] = field(default_factory=list)
+
+
+class LoteInterrompido(RuntimeError):
+    """Erro que vale para todos os documentos seguintes (ex.: cota do dia esgotada): o lote para."""

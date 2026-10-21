@@ -1,7 +1,7 @@
 import json
 
 from notas import avaliacao, lote
-from notas.extratores import Resultado
+from notas.extratores import LoteInterrompido, Resultado
 from notas.modelo import Nota
 
 
@@ -39,7 +39,24 @@ def test_erro_num_documento_nao_para_o_lote_e_e_refeito_depois(con, conjunto):
     primeira = lote.processar(con, conjunto / "documentos", "instavel", "1", instavel)
     assert primeira["erros"] == 1 and primeira["processados"] == 11
     segunda = lote.processar(con, conjunto / "documentos", "instavel", "1", instavel)
-    assert segunda == {"processados": 1, "erros": 0, "ja_feitos": 11}
+    assert segunda == {"processados": 1, "erros": 0, "ja_feitos": 11, "interrompido": None}
+
+
+def test_cota_esgotada_para_o_lote_e_deixa_o_resto_pendente(con, conjunto):
+    chamadas = []
+
+    def com_cota(caminho):
+        chamadas.append(caminho.name)
+        if len(chamadas) > 3:
+            raise LoteInterrompido("cota do dia")
+        return Resultado(Nota())
+
+    feito = lote.processar(con, conjunto / "documentos", "cota", "1", com_cota)
+    assert feito["processados"] == 3 and feito["erros"] == 0 and feito["interrompido"] == "cota do dia"
+    assert len(chamadas) == 4  # parou na primeira recusa, sem tentar os outros 8
+
+    depois = lote.processar(con, conjunto / "documentos", "cota", "1", lambda c: Resultado(Nota()))
+    assert depois["processados"] == 9 and depois["ja_feitos"] == 3
 
 
 def test_extrator_perfeito_tem_100_por_cento(con, conjunto):

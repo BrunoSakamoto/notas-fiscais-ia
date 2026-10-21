@@ -1,17 +1,19 @@
 """Extrator com o Gemini: envia o documento (PDF ou imagem) e pede a nota em JSON estruturado.
 
 O esquema de saída é o próprio modelo Pydantic `Nota`, então a resposta já chega validada.
-Erros temporários (limite de requisições, servidor ocupado) são repetidos com espera crescente.
+Erros temporários (limite por minuto, servidor ocupado) são repetidos, esperando o tempo que a
+API pede quando ela informa. Cota do dia esgotada não adianta repetir: o lote para ali.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import time
 from pathlib import Path
 
 from ..modelo import Nota
-from . import Resultado
+from . import LoteInterrompido, Resultado
 
 NOME = "gemini"
 # Mude a versão sempre que mudar o prompt: o cache guarda resultados por versão.
@@ -35,6 +37,35 @@ _TEMPORARIOS = {429, 500, 502, 503, 504}
 
 class SemChave(RuntimeError):
     pass
+
+
+class CotaEsgotada(LoteInterrompido):
+    pass
+
+
+def _detalhes(erro) -> list[dict]:
+    corpo = erro.details if isinstance(erro.details, dict) else {}
+    return (corpo.get("error") or {}).get("details") or []
+
+
+def _cota_diaria(erro) -> str | None:
+    """O 429 do Gemini diz qual cota estourou; as diárias têm "PerDay" no quotaId."""
+    for detalhe in _detalhes(erro):
+        for violacao in detalhe.get("violations") or []:
+            cota = violacao.get("quotaId", "")
+            if "PerDay" in cota:
+                limite = violacao.get("quotaValue")
+                return f"{cota} (limite {limite})" if limite else cota
+    return None
+
+
+def _espera(erro, tentativa: int) -> float:
+    """Usa o retryDelay que a API manda ("36s"); sem ele, espera crescente."""
+    for detalhe in _detalhes(erro):
+        atraso = re.fullmatch(r"([\d.]+)s", str(detalhe.get("retryDelay", "")))
+        if atraso:
+            return min(120.0, float(atraso.group(1)) + 1)
+    return float(min(60, 2**tentativa))
 
 
 def criar_cliente():
@@ -61,9 +92,14 @@ def extrair(caminho: Path, cliente, modelo: str = MODELO_PADRAO, tentativas: int
             resposta = cliente.models.generate_content(model=modelo, contents=[parte, PROMPT], config=config)
             break
         except errors.APIError as erro:
+            if erro.code == 429 and (cota := _cota_diaria(erro)):
+                raise CotaEsgotada(
+                    f"Cota diária do Gemini esgotada: {cota}. Rode de novo depois que ela renovar; "
+                    "só os documentos que faltam serão enviados."
+                ) from erro
             if erro.code not in _TEMPORARIOS or tentativa == tentativas:
                 raise
-            time.sleep(min(60, 2**tentativa))
+            time.sleep(_espera(erro, tentativa))
 
     uso = resposta.usage_metadata
     return Resultado(

@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import duckdb
 
-from .extratores import Resultado
+from .extratores import LoteInterrompido, Resultado
 from .validacao import validar
 
 log = logging.getLogger(__name__)
@@ -87,19 +88,37 @@ def processar(
         """,
         [extrator, versao],
     ).fetchall()
-    contagem = {"processados": 0, "erros": 0, "ja_feitos": _total(con) - len(pendentes)}
+    contagem = {"processados": 0, "erros": 0, "ja_feitos": _total(con) - len(pendentes), "interrompido": None}
+
+    parar = threading.Event()  # visto pelas threads: depois de uma interrupção, ninguém mais chama a API
+
+    class _Pulado(Exception):
+        pass
 
     def tarefa(documento: str, arquivo: str):
+        if parar.is_set():
+            raise _Pulado
         inicio = time.perf_counter()
         try:
             return documento, funcao(pasta / arquivo), None, time.perf_counter() - inicio
+        except LoteInterrompido:
+            parar.set()
+            raise
         except Exception as erro:  # noqa: BLE001 - o erro de um documento não pode parar o lote
             return documento, None, f"{type(erro).__name__}: {erro}", time.perf_counter() - inicio
 
     with ThreadPoolExecutor(max_workers=max(1, paralelo)) as executor:
         futuros = [executor.submit(tarefa, d, a) for d, a in pendentes]
         for futuro in as_completed(futuros):
-            documento, resultado, erro, segundos = futuro.result()
+            try:
+                documento, resultado, erro, segundos = futuro.result()
+            except _Pulado:
+                continue
+            except LoteInterrompido as motivo:
+                # Nada é gravado: este documento e os seguintes ficam pendentes para a próxima execução.
+                contagem["interrompido"] = str(motivo)
+                log.warning("lote interrompido: %s", motivo)
+                continue
             _gravar(con, documento, extrator, versao, modelo, resultado, erro, segundos)
             contagem["erros" if erro else "processados"] += 1
             log.info("%s %s %s", extrator, documento, "ERRO " + erro if erro else "ok")

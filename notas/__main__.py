@@ -74,6 +74,8 @@ def main(argv: list[str] | None = None) -> None:
                     modelo=args.modelo, paralelo=args.paralelo, refazer=args.refazer,
                 )
         print(f"{feito['processados']} extraídas, {feito['erros']} com erro, {feito['ja_feitos']} já estavam no cache")
+        if feito["interrompido"]:
+            sys.exit(f"Parou antes do fim. {feito['interrompido']}")
 
     elif args.comando == "avaliar":
         with lote.conectar(BANCO) as con:
