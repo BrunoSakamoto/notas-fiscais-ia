@@ -38,6 +38,8 @@ def _float_env(nome: str) -> float | None:
 def main(argv: list[str] | None = None) -> None:
     _carregar_env()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    for ruidoso in ("httpx", "google_genai"):  # cada requisição e aviso interno da biblioteca
+        logging.getLogger(ruidoso).setLevel(logging.WARNING)
     p = argparse.ArgumentParser(prog="notas", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="comando", required=True)
     g = sub.add_parser("gerar", help="gera notas sintéticas com gabarito")

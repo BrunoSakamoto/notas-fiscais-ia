@@ -121,7 +121,7 @@ def processar(
                 continue
             _gravar(con, documento, extrator, versao, modelo, resultado, erro, segundos)
             contagem["erros" if erro else "processados"] += 1
-            log.info("%s %s %s", extrator, documento, "ERRO " + erro if erro else "ok")
+            log.info("%s %s %s (%.0f s)", extrator, documento, "ERRO " + erro if erro else "ok", segundos)
     return contagem
 
 
