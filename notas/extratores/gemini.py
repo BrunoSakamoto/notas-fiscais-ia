@@ -60,11 +60,17 @@ def _cota_diaria(erro) -> str | None:
 
 
 def _espera(erro, tentativa: int) -> float:
-    """Usa o retryDelay que a API manda ("36s"); sem ele, espera crescente."""
+    """Usa o retryDelay que a API manda ("36s"); sem ele, espera crescente.
+
+    Modelo sobrecarregado (503) espera bem mais: no plano gratuito cada tentativa conta na cota
+    do dia, e repetir depois de 2 s quase sempre bate na mesma sobrecarga.
+    """
     for detalhe in _detalhes(erro):
         atraso = re.fullmatch(r"([\d.]+)s", str(detalhe.get("retryDelay", "")))
         if atraso:
             return min(120.0, float(atraso.group(1)) + 1)
+    if erro.code == 503:
+        return float(min(120, 30 * tentativa))
     return float(min(60, 2**tentativa))
 
 

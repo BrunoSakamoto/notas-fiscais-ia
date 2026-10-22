@@ -71,6 +71,7 @@ def test_limite_de_requisicoes_e_repetido(tmp_path):
     resultado = gemini.extrair(arquivo, cliente)
 
     assert len(cliente.chamadas) == 3 and resultado.nota.valor_total == 5.5
+    assert ESPERAS == [2.0, 60.0]  # sobrecarga (503) espera mais que o resto
 
 
 def test_erro_definitivo_nao_e_repetido(tmp_path):
