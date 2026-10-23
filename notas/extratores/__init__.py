@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 
 from ..modelo import Nota
@@ -17,3 +18,13 @@ class Resultado:
 
 class LoteInterrompido(RuntimeError):
     """Erro que vale para todos os documentos seguintes (ex.: cota do dia esgotada): o lote para."""
+
+
+# Ligado quando a pessoa aperta Ctrl+C: as esperas entre tentativas acordam na hora e desistem.
+INTERROMPER = threading.Event()
+
+
+def esperar(segundos: float) -> None:
+    """Espera entre tentativas que pode ser interrompida (time.sleep numa thread não pode)."""
+    if INTERROMPER.wait(segundos):
+        raise LoteInterrompido("interrompido pelo usuário")

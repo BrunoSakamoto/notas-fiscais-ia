@@ -7,13 +7,13 @@ API pede quando ela informa. Cota do dia esgotada não adianta repetir: o lote p
 
 from __future__ import annotations
 
+import logging
 import os
 import re
-import time
 from pathlib import Path
 
 from ..modelo import Nota
-from . import LoteInterrompido, Resultado
+from . import LoteInterrompido, Resultado, esperar
 
 NOME = "gemini"
 # Mude a versão sempre que mudar o prompt: o cache guarda resultados por versão.
@@ -33,6 +33,8 @@ Extraia os campos pedidos no esquema, seguindo estas regras:
 
 _MIME = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
 _TEMPORARIOS = {429, 500, 502, 503, 504}
+TIMEOUT_MS = 120_000  # uma chamada que não responde em 2 min é desistida e repetida
+log = logging.getLogger(__name__)
 
 
 class SemChave(RuntimeError):
@@ -80,8 +82,9 @@ def criar_cliente():
             "Defina GEMINI_API_KEY (crie a chave em aistudio.google.com e coloque no arquivo .env)."
         )
     from google import genai
+    from google.genai import types
 
-    return genai.Client()
+    return genai.Client(http_options=types.HttpOptions(timeout=TIMEOUT_MS))
 
 
 def extrair(caminho: Path, cliente, modelo: str = MODELO_PADRAO, tentativas: int = 5) -> Resultado:
@@ -105,7 +108,13 @@ def extrair(caminho: Path, cliente, modelo: str = MODELO_PADRAO, tentativas: int
                 ) from erro
             if erro.code not in _TEMPORARIOS or tentativa == tentativas:
                 raise
-            time.sleep(_espera(erro, tentativa))
+            espera = _espera(erro, tentativa)
+            motivo = {503: "modelo sobrecarregado", 429: "limite por minuto"}.get(erro.code, "erro do servidor")
+            log.info(
+                "%s: Gemini respondeu %s (%s); nova tentativa em %.0f s (%d de %d)",
+                caminho.stem, erro.code, motivo, espera, tentativa + 1, tentativas,
+            )
+            esperar(espera)
 
     uso = resposta.usage_metadata
     return Resultado(

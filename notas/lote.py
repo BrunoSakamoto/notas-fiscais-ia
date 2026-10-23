@@ -16,7 +16,7 @@ from pathlib import Path
 
 import duckdb
 
-from .extratores import LoteInterrompido, Resultado
+from .extratores import INTERROMPER, LoteInterrompido, Resultado
 from .validacao import validar
 
 log = logging.getLogger(__name__)
@@ -107,21 +107,37 @@ def processar(
         except Exception as erro:  # noqa: BLE001 - o erro de um documento não pode parar o lote
             return documento, None, f"{type(erro).__name__}: {erro}", time.perf_counter() - inicio
 
+    INTERROMPER.clear()
+    total = len(pendentes)
+    feitos = 0
     with ThreadPoolExecutor(max_workers=max(1, paralelo)) as executor:
         futuros = [executor.submit(tarefa, d, a) for d, a in pendentes]
-        for futuro in as_completed(futuros):
-            try:
-                documento, resultado, erro, segundos = futuro.result()
-            except _Pulado:
-                continue
-            except LoteInterrompido as motivo:
-                # Nada é gravado: este documento e os seguintes ficam pendentes para a próxima execução.
-                contagem["interrompido"] = str(motivo)
-                log.warning("lote interrompido: %s", motivo)
-                continue
-            _gravar(con, documento, extrator, versao, modelo, resultado, erro, segundos)
-            contagem["erros" if erro else "processados"] += 1
-            log.info("%s %s %s (%.0f s)", extrator, documento, "ERRO " + erro if erro else "ok", segundos)
+        try:
+            for futuro in as_completed(futuros):
+                try:
+                    documento, resultado, erro, segundos = futuro.result()
+                except _Pulado:
+                    continue
+                except LoteInterrompido as motivo:
+                    # Nada é gravado: este documento e os seguintes ficam pendentes para a próxima execução.
+                    contagem["interrompido"] = str(motivo)
+                    log.warning("lote interrompido: %s", motivo)
+                    continue
+                _gravar(con, documento, extrator, versao, modelo, resultado, erro, segundos)
+                contagem["erros" if erro else "processados"] += 1
+                feitos += 1
+                log.info(
+                    "[%d/%d] %s %s %s (%.0f s)", feitos, total, extrator, documento,
+                    "ERRO " + erro if erro else "ok", segundos,
+                )
+        except KeyboardInterrupt:
+            # Ctrl+C: ninguém mais começa, as esperas acordam e o que já foi gravado fica.
+            parar.set()
+            INTERROMPER.set()
+            for f in futuros:
+                f.cancel()
+            log.warning("interrompendo: aguardando a chamada em andamento terminar (no máximo 2 min)...")
+            contagem["interrompido"] = "cancelado pelo usuário; o que já foi extraído está salvo"
     return contagem
 
 

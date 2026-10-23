@@ -34,7 +34,7 @@ ESPERAS: list[float] = []
 @pytest.fixture(autouse=True)
 def sem_espera(monkeypatch):
     ESPERAS.clear()
-    monkeypatch.setattr(gemini.time, "sleep", ESPERAS.append)
+    monkeypatch.setattr(gemini, "esperar", ESPERAS.append)
 
 
 def _cota(quota_id: str, atraso: str = "36s"):
@@ -108,3 +108,20 @@ def test_cota_diaria_esgotada_nao_e_repetida(tmp_path):
     with pytest.raises(gemini.CotaEsgotada, match="PerDay.*limite 20"):
         gemini.extrair(arquivo, cliente)
     assert len(cliente.chamadas) == 1 and ESPERAS == []
+
+
+def test_ctrl_c_acorda_a_espera_e_interrompe(tmp_path):
+    from notas.extratores import INTERROMPER, LoteInterrompido, esperar
+
+    INTERROMPER.set()
+    try:
+        with pytest.raises(LoteInterrompido, match="interrompido"):
+            esperar(60)  # retorna na hora, sem esperar os 60 s
+    finally:
+        INTERROMPER.clear()
+
+
+def test_cliente_tem_timeout(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "chave-falsa")
+    cliente = gemini.criar_cliente()
+    assert cliente._api_client._http_options.timeout == gemini.TIMEOUT_MS
