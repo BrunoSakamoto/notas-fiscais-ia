@@ -125,3 +125,13 @@ def test_cliente_tem_timeout(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "chave-falsa")
     cliente = gemini.criar_cliente()
     assert cliente._api_client._http_options.timeout == gemini.TIMEOUT_MS
+
+
+def test_sobrecarga_persistente_para_o_lote(tmp_path):
+    arquivo = tmp_path / "n.pdf"
+    arquivo.write_bytes(b"%PDF-1.4")
+    cliente = ClienteFalso(falhas=[503, 504, 503, 503])
+
+    with pytest.raises(gemini.Sobrecarregado, match="mais tarde"):
+        gemini.extrair(arquivo, cliente)
+    assert len(cliente.chamadas) == 4 and ESPERAS == [30.0, 60.0, 90.0]

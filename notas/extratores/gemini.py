@@ -45,6 +45,10 @@ class CotaEsgotada(LoteInterrompido):
     pass
 
 
+class Sobrecarregado(LoteInterrompido):
+    """O modelo segue sobrecarregado depois de todas as tentativas: insistir só gasta a cota do dia."""
+
+
 def _detalhes(erro) -> list[dict]:
     corpo = erro.details if isinstance(erro.details, dict) else {}
     return (corpo.get("error") or {}).get("details") or []
@@ -71,7 +75,7 @@ def _espera(erro, tentativa: int) -> float:
         atraso = re.fullmatch(r"([\d.]+)s", str(detalhe.get("retryDelay", "")))
         if atraso:
             return min(120.0, float(atraso.group(1)) + 1)
-    if erro.code == 503:
+    if erro.code in (503, 504):
         return float(min(120, 30 * tentativa))
     return float(min(60, 2**tentativa))
 
@@ -87,7 +91,7 @@ def criar_cliente():
     return genai.Client(http_options=types.HttpOptions(timeout=TIMEOUT_MS))
 
 
-def extrair(caminho: Path, cliente, modelo: str = MODELO_PADRAO, tentativas: int = 5) -> Resultado:
+def extrair(caminho: Path, cliente, modelo: str = MODELO_PADRAO, tentativas: int = 4) -> Resultado:
     from google.genai import errors, types
 
     parte = types.Part.from_bytes(data=caminho.read_bytes(), mime_type=_MIME[caminho.suffix.lower()])
@@ -105,6 +109,11 @@ def extrair(caminho: Path, cliente, modelo: str = MODELO_PADRAO, tentativas: int
                 raise CotaEsgotada(
                     f"Cota diária do Gemini esgotada: {cota}. Rode de novo depois que ela renovar; "
                     "só os documentos que faltam serão enviados."
+                ) from erro
+            if erro.code in (503, 504) and tentativa == tentativas:
+                raise Sobrecarregado(
+                    f"o Gemini segue sobrecarregado ({erro.code}) depois de {tentativas} tentativas. "
+                    "Parei para não gastar a cota do dia à toa; rode de novo mais tarde."
                 ) from erro
             if erro.code not in _TEMPORARIOS or tentativa == tentativas:
                 raise
